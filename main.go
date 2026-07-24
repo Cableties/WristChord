@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -162,7 +163,11 @@ func main() {
 	mux.HandleFunc("/search", handleSearch)
 	mux.HandleFunc("/tab/", handleTab)
 
-	addr := ":8080"
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080" // local dev fallback; Cloud Run always sets PORT itself
+	}
+	addr := ":" + port
 	log.Printf("ug-chords-backend listening on %s", addr)
 	log.Fatal(http.ListenAndServe(addr, mux))
 }
