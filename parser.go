@@ -42,7 +42,7 @@ func ParseTabContent(raw string) []Line {
 	lines := make([]Line, 0, len(rawLines))
 
 	for _, rl := range rawLines {
-		var chords []ChordPosition
+		chords := make([]ChordPosition, 0)
 		// Walk the line, extracting [ch]X[/ch] tags and recording the
 		// offset each chord would land at in the tag-stripped text.
 		var b strings.Builder
