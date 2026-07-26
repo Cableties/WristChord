@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -21,6 +22,7 @@ type SearchResultItem struct {
 	Artist string  `json:"artist"`
 	Type   string  `json:"type"` // "Chords", "Tab", etc.
 	Rating float64 `json:"rating"`
+	Votes  int64   `json:"votes"` // number of user reviews this tab has received
 }
 
 type SearchResponse struct {
@@ -119,8 +121,15 @@ func handleSearch(w http.ResponseWriter, r *http.Request) {
 			Artist: string(t.ArtistName),
 			Type:   string(t.Type),
 			Rating: t.Rating,
+			Votes:  t.Votes,
 		})
 	}
+
+	// Most-reviewed first — a tab with far more reviews is generally more
+	// trustworthy than one with a high rating from just a handful of votes.
+	sort.Slice(items, func(i, j int) bool {
+		return items[i].Votes > items[j].Votes
+	})
 
 	writeJSONCached(w, cacheKey, SearchResponse{Results: items})
 }
