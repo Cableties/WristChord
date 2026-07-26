@@ -3,6 +3,7 @@ package main
 import (
 	"regexp"
 	"strings"
+	"unicode"
 )
 
 // UG's mobile API returns tab/chord content as a single string using
@@ -67,7 +68,74 @@ func ParseTabContent(raw string) []Line {
 		})
 	}
 
-	return mergeChordAndLyricPairs(lines)
+	return splitRunOnLines(mergeChordAndLyricPairs(lines))
+}
+
+// splitRunOnLines handles a data-quality issue in some Ultimate Guitar
+// contributions (not a scraping/parsing bug on our side): the raw content
+// for a section is submitted as one continuous run-on string with no
+// line-break markers between what should be separate printed lines at
+// all — e.g. "...be the day" directly touching "That they're gonna..."
+// with zero characters between them, not even a space.
+//
+// This is reliably detectable: an uppercase letter immediately preceded
+// by a lowercase letter or sentence-ending punctuation (",.!?'"), with no
+// whitespace at all in between, never happens in normal English prose —
+// a real sentence boundary always has a space there. Wherever that exact
+// pattern appears, a line-break character was almost certainly stripped
+// down to nothing upstream, so this reconstructs it as a real line split,
+// carrying each chord into whichever new segment it now falls within and
+// re-offsetting it relative to that segment's own start.
+func splitRunOnLines(lines []Line) []Line {
+	result := make([]Line, 0, len(lines))
+	for _, l := range lines {
+		result = append(result, splitRunOnSentences(l)...)
+	}
+	return result
+}
+
+func splitRunOnSentences(line Line) []Line {
+	runes := []rune(line.Lyrics)
+	if len(runes) == 0 {
+		return []Line{line}
+	}
+
+	var splitPoints []int
+	for i := 1; i < len(runes); i++ {
+		curr := runes[i]
+		if !unicode.IsUpper(curr) {
+			continue
+		}
+		prev := runes[i-1]
+		if unicode.IsLower(prev) || strings.ContainsRune(",.!?'", prev) {
+			splitPoints = append(splitPoints, i)
+		}
+	}
+	if len(splitPoints) == 0 {
+		return []Line{line}
+	}
+
+	boundaries := append([]int{0}, splitPoints...)
+	boundaries = append(boundaries, len(runes))
+
+	segments := make([]Line, 0, len(boundaries)-1)
+	for k := 0; k < len(boundaries)-1; k++ {
+		start, end := boundaries[k], boundaries[k+1]
+		var segChords []ChordPosition
+		for _, c := range line.Chords {
+			if c.Offset >= start && c.Offset < end {
+				segChords = append(segChords, ChordPosition{
+					Symbol: c.Symbol,
+					Offset: c.Offset - start,
+				})
+			}
+		}
+		segments = append(segments, Line{
+			Lyrics: string(runes[start:end]),
+			Chords: segChords,
+		})
+	}
+	return segments
 }
 
 // mergeChordAndLyricPairs handles Ultimate Guitar's other common chord
