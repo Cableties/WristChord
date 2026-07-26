@@ -67,5 +67,45 @@ func ParseTabContent(raw string) []Line {
 		})
 	}
 
-	return lines
+	return mergeChordAndLyricPairs(lines)
+}
+
+// mergeChordAndLyricPairs handles Ultimate Guitar's other common chord
+// chart convention, distinct from inline [ch]word[/ch] tagging: a line
+// containing only chord symbols (rest is whitespace), immediately followed
+// by a separate line containing the actual lyric text with no chord tags
+// at all. Left unmerged, these arrive as two unrelated Line entries — a
+// chord row with a blank Lyrics field, then a lyric row with no chords —
+// which is why chords would render as their own detached line instead of
+// positioned above the words they actually belong to.
+//
+// Only merges when the line right after a chord-only line is itself a
+// plain lyric line (no chords, non-blank text). A chord-only line followed
+// by a blank spacer, a section header, or another chord-only line (e.g.
+// a repeated instrumental intro) is left standalone, since there's no
+// lyric line for it to pair with.
+func mergeChordAndLyricPairs(lines []Line) []Line {
+	merged := make([]Line, 0, len(lines))
+	i := 0
+	for i < len(lines) {
+		current := lines[i]
+		isChordOnly := len(current.Chords) > 0 && strings.TrimSpace(current.Lyrics) == ""
+
+		if isChordOnly && i+1 < len(lines) {
+			next := lines[i+1]
+			isPlainLyric := len(next.Chords) == 0 && strings.TrimSpace(next.Lyrics) != ""
+			if isPlainLyric {
+				merged = append(merged, Line{
+					Lyrics: next.Lyrics,
+					Chords: current.Chords,
+				})
+				i += 2
+				continue
+			}
+		}
+
+		merged = append(merged, current)
+		i++
+	}
+	return merged
 }
