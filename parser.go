@@ -79,11 +79,23 @@ func ParseTabContent(raw string) []Line {
 // which is why chords would render as their own detached line instead of
 // positioned above the words they actually belong to.
 //
-// Only merges when the line right after a chord-only line is itself a
-// plain lyric line (no chords, non-blank text). A chord-only line followed
-// by a blank spacer, a section header, or another chord-only line (e.g.
-// a repeated instrumental intro) is left standalone, since there's no
-// lyric line for it to pair with.
+// Some tabs go further and emit *each* mid-sentence chord change as its
+// own chord-only/lyric-only pair — e.g. a single printed line like
+// "  Dsus4        A7sus4 / That they're gonna throw it back to you,"
+// arrives as four separate segments: chord(Dsus4), lyric("That they're
+// gonna throw it "), chord(A7sus4), lyric("back to you,"). Merging only
+// the first pair would leave "A7sus4" and "back to you," detached as
+// their own standalone line. This keeps consuming the whole alternating
+// run — however many chord/lyric pairs it contains — concatenating the
+// lyric fragments together and re-offsetting each chord by however much
+// lyric text came before it, so the result is one Line with every chord
+// correctly positioned in the fully assembled sentence.
+//
+// Only merges when a chord-only line is immediately followed by a plain
+// lyric line. A chord-only line followed by a blank spacer, a section
+// header, or another chord-only line (e.g. a repeated instrumental intro)
+// ends the run and is left standalone, since there's no lyric line left
+// to pair with.
 func mergeChordAndLyricPairs(lines []Line) []Line {
 	merged := make([]Line, 0, len(lines))
 	i := 0
@@ -91,15 +103,46 @@ func mergeChordAndLyricPairs(lines []Line) []Line {
 		current := lines[i]
 		isChordOnly := len(current.Chords) > 0 && strings.TrimSpace(current.Lyrics) == ""
 
-		if isChordOnly && i+1 < len(lines) {
-			next := lines[i+1]
-			isPlainLyric := len(next.Chords) == 0 && strings.TrimSpace(next.Lyrics) != ""
-			if isPlainLyric {
+		if isChordOnly {
+			var combinedLyrics strings.Builder
+			var combinedChords []ChordPosition
+			j := i
+			for j < len(lines) {
+				chordSeg := lines[j]
+				isChordSeg := len(chordSeg.Chords) > 0 && strings.TrimSpace(chordSeg.Lyrics) == ""
+				if !isChordSeg || j+1 >= len(lines) {
+					break
+				}
+
+				lyricSeg := lines[j+1]
+				isPlainLyric := len(lyricSeg.Chords) == 0 && strings.TrimSpace(lyricSeg.Lyrics) != ""
+				if !isPlainLyric {
+					break
+				}
+
+				// Strip a trailing \r left over from \r\n line endings —
+				// otherwise concatenating segments embeds a stray control
+				// character mid-sentence and throws off every subsequent
+				// chord's character-offset arithmetic by one.
+				lyricText := strings.TrimRight(lyricSeg.Lyrics, "\r\n")
+
+				base := combinedLyrics.Len()
+				for _, c := range chordSeg.Chords {
+					combinedChords = append(combinedChords, ChordPosition{
+						Symbol: c.Symbol,
+						Offset: c.Offset + base,
+					})
+				}
+				combinedLyrics.WriteString(lyricText)
+				j += 2
+			}
+
+			if len(combinedChords) > 0 {
 				merged = append(merged, Line{
-					Lyrics: next.Lyrics,
-					Chords: current.Chords,
+					Lyrics: combinedLyrics.String(),
+					Chords: combinedChords,
 				})
-				i += 2
+				i = j
 				continue
 			}
 		}
