@@ -46,7 +46,24 @@ func ParseTabContent(raw string) []Line {
 		chords := make([]ChordPosition, 0)
 		// Walk the line, extracting [ch]X[/ch] tags and recording the
 		// offset each chord would land at in the tag-stripped text.
+		//
+		// visualCol tracks the true monospace column position, separate
+		// from `b` (which only accumulates real, non-tag text for the
+		// output Lyrics field — deliberately excluding chord symbols, so a
+		// chord-only line's Lyrics stays blank/whitespace and is still
+		// detected as chord-only downstream).
+		//
+		// Critically, visualCol must still advance by each chord symbol's
+		// own character length after placing it — on a chord-only line
+		// like "[ch]Em7[/ch]      [ch]G[/ch]", "Em7" occupies 3 real
+		// columns in the original monospace layout even though its tag
+		// gets stripped out of `b` entirely. Without this, every chord
+		// after the first on such a line was undercounted by the combined
+		// length of every chord before it, landing offsets several
+		// characters too early (e.g. "G" landing on "is" instead of
+		// "gonna").
 		var b strings.Builder
+		visualCol := 0
 		remaining := rl
 		for {
 			loc := chordTagRe.FindStringSubmatchIndex(remaining)
@@ -54,12 +71,15 @@ func ParseTabContent(raw string) []Line {
 				b.WriteString(remaining)
 				break
 			}
-			b.WriteString(remaining[:loc[0]])
+			preText := remaining[:loc[0]]
+			b.WriteString(preText)
+			visualCol += len(preText)
 			symbol := remaining[loc[2]:loc[3]]
 			chords = append(chords, ChordPosition{
 				Symbol: symbol,
-				Offset: b.Len(),
+				Offset: visualCol,
 			})
+			visualCol += len(symbol)
 			remaining = remaining[loc[1]:]
 		}
 		lines = append(lines, Line{
