@@ -167,6 +167,15 @@ func handleTab(w http.ResponseWriter, r *http.Request) {
 	writeJSONCached(w, cacheKey, resp)
 }
 
+// Bump this string every time you deploy, so /version lets you confirm
+// Cloud Run is actually serving the build you just pushed — not a stale
+// revision. Cheaper than guessing based on symptoms after every redeploy.
+const buildMarker = "parser-v6-revert-multiseg-merge"
+
+func handleVersion(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]string{"build": buildMarker})
+}
+
 func handleTabRaw(w http.ResponseWriter, r *http.Request) {
 	idStr := strings.TrimPrefix(r.URL.Path, "/tab-raw/")
 	id, err := strconv.ParseInt(idStr, 10, 64)
@@ -190,6 +199,7 @@ func main() {
 	mux.HandleFunc("/search", handleSearch)
 	mux.HandleFunc("/tab/", handleTab)
 	mux.HandleFunc("/tab-raw/", handleTabRaw) // debug: untouched raw content, no parsing applied
+	mux.HandleFunc("/version", handleVersion) // debug: confirm which build is actually deployed
 
 	port := os.Getenv("PORT")
 	if port == "" {
