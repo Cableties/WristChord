@@ -167,10 +167,29 @@ func handleTab(w http.ResponseWriter, r *http.Request) {
 	writeJSONCached(w, cacheKey, resp)
 }
 
+func handleTabRaw(w http.ResponseWriter, r *http.Request) {
+	idStr := strings.TrimPrefix(r.URL.Path, "/tab-raw/")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid tab id"})
+		return
+	}
+
+	tab, err := scraper.GetTabByID(id)
+	if err != nil {
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "fetch failed: " + err.Error()})
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Write([]byte(tab.Content))
+}
+
 func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/search", handleSearch)
 	mux.HandleFunc("/tab/", handleTab)
+	mux.HandleFunc("/tab-raw/", handleTabRaw) // debug: untouched raw content, no parsing applied
 
 	port := os.Getenv("PORT")
 	if port == "" {
