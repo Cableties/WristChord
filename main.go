@@ -172,10 +172,30 @@ func handleTab(w http.ResponseWriter, r *http.Request) {
 // Bump this string every time you deploy, so /version lets you confirm
 // Cloud Run is actually serving the build you just pushed — not a stale
 // revision. Cheaper than guessing based on symptoms after every redeploy.
-const buildMarker = "parser-v9-search-no-type-filter"
+const buildMarker = "parser-v10-search-raw-debug-endpoint"
 
 func handleVersion(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"build": buildMarker})
+}
+
+func handleSearchRaw(w http.ResponseWriter, r *http.Request) {
+	q := strings.TrimSpace(r.URL.Query().Get("q"))
+	if q == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "missing ?q="})
+		return
+	}
+
+	result, err := scraper.Search(ug.SearchParams{Title: q, Page: 1})
+	if err != nil {
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "search failed: " + err.Error()})
+		return
+	}
+
+	// Untouched struct straight from the scraper library — no filtering,
+	// no mapping to our own SearchResultItem shape. If this is also
+	// empty, the problem is upstream (UG's API itself, or how we're
+	// calling it) rather than anything in our own processing logic.
+	writeJSON(w, http.StatusOK, result)
 }
 
 func handleTabRaw(w http.ResponseWriter, r *http.Request) {
@@ -200,8 +220,9 @@ func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/search", handleSearch)
 	mux.HandleFunc("/tab/", handleTab)
-	mux.HandleFunc("/tab-raw/", handleTabRaw) // debug: untouched raw content, no parsing applied
-	mux.HandleFunc("/version", handleVersion) // debug: confirm which build is actually deployed
+	mux.HandleFunc("/tab-raw/", handleTabRaw)      // debug: untouched raw content, no parsing applied
+	mux.HandleFunc("/search-raw", handleSearchRaw) // debug: untouched scraper.Search() result
+	mux.HandleFunc("/version", handleVersion)      // debug: confirm which build is actually deployed
 
 	port := os.Getenv("PORT")
 	if port == "" {
