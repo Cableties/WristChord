@@ -141,7 +141,7 @@ func splitRunOnSentences(line Line) []Line {
 	segments := make([]Line, 0, len(boundaries)-1)
 	for k := 0; k < len(boundaries)-1; k++ {
 		start, end := boundaries[k], boundaries[k+1]
-		var segChords []ChordPosition
+		segChords := make([]ChordPosition, 0)
 		for _, c := range line.Chords {
 			if c.Offset >= start && c.Offset < end {
 				segChords = append(segChords, ChordPosition{
