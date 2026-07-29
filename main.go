@@ -105,8 +105,10 @@ func handleSearch(w http.ResponseWriter, r *http.Request) {
 
 	result, err := scraper.Search(ug.SearchParams{
 		Title: q,
-		Type:  []ug.TabType{ug.TabTypeChords}, // chord charts only; drop this to include tabs/bass/etc.
-		Page:  1,
+		// No Type filter — return matches across every instrument/tab type
+		// (chords, ukulele, bass, tabs, etc.) rather than restricting to a
+		// specific subset, which was silently hiding real results before.
+		Page: 1,
 	})
 	if err != nil {
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "search failed: " + err.Error()})
@@ -170,7 +172,7 @@ func handleTab(w http.ResponseWriter, r *http.Request) {
 // Bump this string every time you deploy, so /version lets you confirm
 // Cloud Run is actually serving the build you just pushed — not a stale
 // revision. Cheaper than guessing based on symptoms after every redeploy.
-const buildMarker = "parser-v6-revert-multiseg-merge"
+const buildMarker = "parser-v9-search-no-type-filter"
 
 func handleVersion(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"build": buildMarker})
