@@ -141,12 +141,23 @@ func splitRunOnSentences(line Line) []Line {
 	segments := make([]Line, 0, len(boundaries)-1)
 	for k := 0; k < len(boundaries)-1; k++ {
 		start, end := boundaries[k], boundaries[k+1]
+		isLastSegment := k == len(boundaries)-2
 		segChords := make([]ChordPosition, 0)
 		for _, c := range line.Chords {
-			if c.Offset >= start && c.Offset < end {
+			// A trailing chord marker with no lyric text after it (e.g.
+			// "...love.....I'm in love" where a chord's offset lands
+			// exactly at the end of the combined string) has an offset
+			// equal to the full string length. The strict c.Offset < end
+			// check excluded that chord from every segment entirely,
+			// since it fails "< end" for the last segment too — silently
+			// dropping it rather than keeping it at the tail end of
+			// whichever segment it belongs to. The last segment accepts
+			// anything >= start with no upper bound.
+			belongsHere := c.Offset >= start && (c.Offset < end || isLastSegment)
+			if belongsHere {
 				segChords = append(segChords, ChordPosition{
 					Symbol: c.Symbol,
-					Offset: c.Offset - start,
+					Offset: coerceIntoRange(c.Offset-start, end-start),
 				})
 			}
 		}
@@ -156,6 +167,17 @@ func splitRunOnSentences(line Line) []Line {
 		})
 	}
 	return segments
+}
+
+// coerceIntoRange clamps an offset so it never exceeds a segment's own
+// text length — needed for the trailing-chord case above, where the
+// chord's original offset can sit past the end of the (now much shorter)
+// final segment once the line has been split.
+func coerceIntoRange(offset int, maxLen int) int {
+	if offset > maxLen {
+		return maxLen
+	}
+	return offset
 }
 
 // mergeChordAndLyricPairs handles Ultimate Guitar's other common chord
