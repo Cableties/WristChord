@@ -170,7 +170,7 @@ func handleTab(w http.ResponseWriter, r *http.Request) {
 // Bump this string every time you deploy, so /version lets you confirm
 // Cloud Run is actually serving the build you just pushed — not a stale
 // revision. Cheaper than guessing based on symptoms after every redeploy.
-const buildMarker = "parser-v16-fix-asterisk-only-line-merge"
+const buildMarker = "parser-v17-preserve-asterisk-annotations"
 
 func handleVersion(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"build": buildMarker})

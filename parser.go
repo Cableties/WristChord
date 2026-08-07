@@ -213,6 +213,57 @@ func coerceIntoRange(offset int, maxLen int) int {
 	return offset
 }
 
+// markAsteriskChords carries a chord-only line's asterisk "single strum"
+// annotations forward onto the specific chords they belong to, before
+// that line's own text is discarded during merging. Each asterisk's
+// position is matched to whichever chord's offset is closest to it — the
+// original ASCII alignment between an asterisk and "its" chord is
+// visually approximate (hand-typed by the tab's contributor), so nearest-
+// match is more robust than requiring an exact offset match.
+//
+// The asterisk is preserved by literally appending it to that chord's
+// Symbol text (e.g. "B7" becomes "B7*"), rather than adding a separate
+// annotation field. That's deliberately minimal: the diagram-lookup code
+// already strips a trailing "*" before parsing a chord's quality (added
+// for UG's other "*" convention, non-standard voicings), and the text
+// display just renders Symbol directly — so this flows through to both
+// phone and watch with no client-side changes needed at all.
+func markAsteriskChords(lyrics string, chords []ChordPosition) []ChordPosition {
+	runes := []rune(lyrics)
+	var asteriskPositions []int
+	for i, r := range runes {
+		if r == '*' {
+			asteriskPositions = append(asteriskPositions, i)
+		}
+	}
+	if len(asteriskPositions) == 0 {
+		return chords
+	}
+
+	marked := make([]ChordPosition, len(chords))
+	copy(marked, chords)
+
+	for _, ap := range asteriskPositions {
+		bestIdx := -1
+		bestDist := 0
+		for idx, c := range marked {
+			dist := c.Offset - ap
+			if dist < 0 {
+				dist = -dist
+			}
+			if bestIdx == -1 || dist < bestDist {
+				bestIdx = idx
+				bestDist = dist
+			}
+		}
+		if bestIdx >= 0 && !strings.HasSuffix(marked[bestIdx].Symbol, "*") {
+			marked[bestIdx].Symbol += "*"
+		}
+	}
+
+	return marked
+}
+
 // mergeChordAndLyricPairs handles Ultimate Guitar's other common chord
 // chart convention, distinct from inline [ch]word[/ch] tagging: a line
 // containing only chord symbols (rest is whitespace, or whitespace plus
@@ -237,16 +288,6 @@ func coerceIntoRange(offset int, maxLen int) int {
 // clever but safe — it may occasionally leave a genuinely multi-segment
 // mid-sentence chord change only partially merged, but that's a much
 // smaller and more visible problem than silently dropping chords.
-//
-// Known limitation: per-chord "single strum" asterisk annotations are not
-// preserved into the output — once a line like "         *        *" is
-// recognized as chord-only-equivalent and merged, the specific
-// information "which chord was marked with an asterisk" is discarded,
-// and all of that line's chords render identically. Fixing that would
-// need a real per-ChordPosition annotation field threaded all the way
-// through to the rendering layer, which felt like more scope than fixing
-// the chords-not-attaching-to-the-right-lyric-line bug warranted right
-// now.
 func mergeChordAndLyricPairs(lines []Line) []Line {
 	merged := make([]Line, 0, len(lines))
 	i := 0
@@ -260,7 +301,7 @@ func mergeChordAndLyricPairs(lines []Line) []Line {
 			if isPlainLyric {
 				merged = append(merged, Line{
 					Lyrics: strings.TrimRight(next.Lyrics, "\r\n"),
-					Chords: current.Chords,
+					Chords: markAsteriskChords(current.Lyrics, current.Chords),
 				})
 				i += 2
 				continue
