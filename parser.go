@@ -91,6 +91,21 @@ func ParseTabContent(raw string) []Line {
 	return splitRunOnLines(mergeChordAndLyricPairs(lines))
 }
 
+// isEffectivelyBlank treats a line as "blank" for merge-detection purposes
+// if, after trimming whitespace, nothing remains except asterisk
+// characters. Some tabs use a standalone line of asterisks positioned
+// under specific chords as a "single strum here" annotation (e.g.
+// "         *                 *" above an Em/B7/Em/B7 chord row), which
+// is still fundamentally a chord-only line pairing with the next real
+// lyric line — but a strict TrimSpace(s) == "" check doesn't recognize it
+// as blank, since the asterisks are visible non-whitespace content. That
+// left chords floating above a meaningless asterisk-only line while the
+// actual lyric line right after it showed no chords at all.
+func isEffectivelyBlank(s string) bool {
+	withoutAsterisks := strings.ReplaceAll(s, "*", "")
+	return strings.TrimSpace(withoutAsterisks) == ""
+}
+
 // splitRunOnLines handles a data-quality issue in some Ultimate Guitar
 // contributions (not a scraping/parsing bug on our side): the raw content
 // for a section is submitted as one continuous run-on string with no
@@ -200,12 +215,14 @@ func coerceIntoRange(offset int, maxLen int) int {
 
 // mergeChordAndLyricPairs handles Ultimate Guitar's other common chord
 // chart convention, distinct from inline [ch]word[/ch] tagging: a line
-// containing only chord symbols (rest is whitespace), immediately followed
-// by a separate line containing the actual lyric text with no chord tags
-// at all. Left unmerged, these arrive as two unrelated Line entries — a
-// chord row with a blank Lyrics field, then a lyric row with no chords —
-// which is why chords would render as their own detached line instead of
-// positioned above the words they actually belong to.
+// containing only chord symbols (rest is whitespace, or whitespace plus
+// asterisk "single strum" annotations — see isEffectivelyBlank),
+// immediately followed by a separate line containing the actual lyric
+// text with no chord tags at all. Left unmerged, these arrive as two
+// unrelated Line entries — a chord row with a blank Lyrics field, then a
+// lyric row with no chords — which is why chords would render as their
+// own detached line instead of positioned above the words they actually
+// belong to.
 //
 // This only merges exactly one chord-only line with the one lyric line
 // immediately after it. An earlier version tried to keep consuming an
@@ -220,12 +237,22 @@ func coerceIntoRange(offset int, maxLen int) int {
 // clever but safe — it may occasionally leave a genuinely multi-segment
 // mid-sentence chord change only partially merged, but that's a much
 // smaller and more visible problem than silently dropping chords.
+//
+// Known limitation: per-chord "single strum" asterisk annotations are not
+// preserved into the output — once a line like "         *        *" is
+// recognized as chord-only-equivalent and merged, the specific
+// information "which chord was marked with an asterisk" is discarded,
+// and all of that line's chords render identically. Fixing that would
+// need a real per-ChordPosition annotation field threaded all the way
+// through to the rendering layer, which felt like more scope than fixing
+// the chords-not-attaching-to-the-right-lyric-line bug warranted right
+// now.
 func mergeChordAndLyricPairs(lines []Line) []Line {
 	merged := make([]Line, 0, len(lines))
 	i := 0
 	for i < len(lines) {
 		current := lines[i]
-		isChordOnly := len(current.Chords) > 0 && strings.TrimSpace(current.Lyrics) == ""
+		isChordOnly := len(current.Chords) > 0 && isEffectivelyBlank(current.Lyrics)
 
 		if isChordOnly && i+1 < len(lines) {
 			next := lines[i+1]
