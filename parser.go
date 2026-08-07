@@ -127,9 +127,27 @@ func splitRunOnSentences(line Line) []Line {
 			continue
 		}
 		prev := runes[i-1]
-		if unicode.IsLower(prev) || strings.ContainsRune(",.!?'", prev) {
-			splitPoints = append(splitPoints, i)
+		if !unicode.IsLower(prev) && !strings.ContainsRune(",.!?'", prev) {
+			continue
 		}
+
+		// Guard against a real false positive found in practice: "N.C."
+		// (standard chord-chart shorthand for "No Chord") was getting
+		// split into "N." and "C." as two separate lines, because a
+		// period immediately followed by an uppercase letter matches our
+		// general "line break got stripped" signal. A period preceded by
+		// another single ISOLATED capital letter — itself at the very
+		// start of the string, or preceded by a space or another period —
+		// is almost certainly an abbreviation chain like "N.C." or
+		// "U.S.A.", not a genuinely missing line break, so skip it.
+		if prev == '.' && i >= 2 && unicode.IsUpper(runes[i-2]) {
+			isIsolatedLetter := i < 3 || runes[i-3] == ' ' || runes[i-3] == '.'
+			if isIsolatedLetter {
+				continue
+			}
+		}
+
+		splitPoints = append(splitPoints, i)
 	}
 	if len(splitPoints) == 0 {
 		return []Line{line}
